@@ -188,6 +188,11 @@ async def seed_monasteries(db):
 
 
 # Routes
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Sikkim Monastery Chatbot API"}
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}

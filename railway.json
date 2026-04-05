@@ -4,8 +4,10 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python -m uvicorn server:app --host 0.0.0.0 --port $PORT",
-    "healthcheckPath": "/docs",
-    "healthcheckTimeout": 30
+    "startCommand": "python -m uvicorn server:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 65",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 60,
+    "healthcheckInterval": 10,
+    "restartPolicyMaxRetries": 5
   }
 }
