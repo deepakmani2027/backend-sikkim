@@ -62,27 +62,17 @@ Default greeting: "Welcome, traveler... to the sacred monasteries of Sikkim. I a
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize MongoDB connection on startup
-    try:
-        if MONGO_URL:
-            app.state.mongo_client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000)
-            app.state.db = app.state.mongo_client[DB_NAME]
-            # Seed data asynchronously without blocking startup
-            try:
-                await seed_monasteries(app.state.db)
-            except Exception as e:
-                print(f"Warning: Could not seed monasteries: {e}")
-        else:
-            app.state.db = None
-            print("Warning: MONGO_URL not configured")
-    except Exception as e:
-        print(f"Warning: MongoDB connection failed: {e}")
-        app.state.db = None
+    # Initialize app state
+    app.state.db = None
+    app.state.mongo_client = None
+    
+    # Don't block startup on MongoDB connection
+    # Just initialize immediately and let endpoints handle DB errors
     
     yield
     
     # Cleanup on shutdown
-    if hasattr(app.state, 'mongo_client'):
+    if hasattr(app.state, 'mongo_client') and app.state.mongo_client:
         try:
             app.state.mongo_client.close()
         except:
@@ -90,6 +80,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Sikkim Monastery Digital Experience", lifespan=lifespan)
+
+
+# Initialize MongoDB lazily on first use
+async def get_db():
+    if not hasattr(app.state, 'mongo_client') or app.state.mongo_client is None:
+        try:
+            if MONGO_URL:
+                app.state.mongo_client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+                app.state.db = app.state.mongo_client[DB_NAME]
+                # Try to seed data once
+                try:
+                    await seed_monasteries(app.state.db)
+                except:
+                    pass
+            else:
+                app.state.db = None
+        except Exception as e:
+            print(f"Warning: MongoDB connection failed: {e}")
+            app.state.db = None
+    return app.state.db
 
 app.add_middleware(
     CORSMiddleware,
@@ -207,28 +217,44 @@ async def seed_monasteries(db):
 # Routes
 @app.get("/")
 async def root():
-    return {"status": "ok", "message": "Sikkim Monastery Chatbot API"}
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "Sikkim Monastery Chatbot"}
 
 
 @app.get("/api/health")
 async def health():
+    """Health status endpoint"""
     return {"status": "ok"}
 
 
 @app.get("/api/monasteries", response_model=List[MonasteryOut])
 async def get_monasteries():
-    db = app.state.db
-    monasteries = await db.monasteries.find({}, {"_id": 0}).to_list(100)
-    return monasteries
+    try:
+        db = await get_db()
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not available")
+        monasteries = await db.monasteries.find({}, {"_id": 0}).to_list(100)
+        return monasteries
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
 
 @app.get("/api/monasteries/{monastery_id}", response_model=MonasteryOut)
 async def get_monastery(monastery_id: str):
-    db = app.state.db
-    monastery = await db.monasteries.find_one({"id": monastery_id}, {"_id": 0})
-    if not monastery:
-        raise HTTPException(status_code=404, detail="Monastery not found")
-    return monastery
+    try:
+        db = await get_db()
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not available")
+        monastery = await db.monasteries.find_one({"id": monastery_id}, {"_id": 0})
+        if not monastery:
+            raise HTTPException(status_code=404, detail="Monastery not found")
+        return monastery
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/chat", response_model=ChatResponse)
