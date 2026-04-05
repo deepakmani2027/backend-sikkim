@@ -62,14 +62,31 @@ Default greeting: "Welcome, traveler... to the sacred monasteries of Sikkim. I a
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.mongo_client = AsyncIOMotorClient(MONGO_URL)
-    app.state.db = app.state.mongo_client[DB_NAME]
-    
-    # Seed monastery data
-    await seed_monasteries(app.state.db)
+    # Initialize MongoDB connection on startup
+    try:
+        if MONGO_URL:
+            app.state.mongo_client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+            app.state.db = app.state.mongo_client[DB_NAME]
+            # Seed data asynchronously without blocking startup
+            try:
+                await seed_monasteries(app.state.db)
+            except Exception as e:
+                print(f"Warning: Could not seed monasteries: {e}")
+        else:
+            app.state.db = None
+            print("Warning: MONGO_URL not configured")
+    except Exception as e:
+        print(f"Warning: MongoDB connection failed: {e}")
+        app.state.db = None
     
     yield
-    app.state.mongo_client.close()
+    
+    # Cleanup on shutdown
+    if hasattr(app.state, 'mongo_client'):
+        try:
+            app.state.mongo_client.close()
+        except:
+            pass
 
 
 app = FastAPI(title="Sikkim Monastery Digital Experience", lifespan=lifespan)
