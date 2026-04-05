@@ -212,18 +212,26 @@ async def get_monastery(monastery_id: str):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
+        # Validate required API keys
+        if not OPENROUTER_API_KEY or not ELEVENLABS_API_KEY:
+            raise HTTPException(status_code=500, detail="API keys not configured. Please set OPENROUTER_API_KEY and ELEVENLABS_API_KEY.")
+        
         messages = [{"role": "system", "content": TENZIN_SYSTEM_PROMPT}]
         for msg in request.messages:
             messages.append({"role": msg.role, "content": msg.content})
         
-        completion = openrouter_client.chat.completions.create(
-            model="openai/gpt-4o-mini",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500,
-        )
-        
-        text_response = completion.choices[0].message.content
+        try:
+            completion = openrouter_client.chat.completions.create(
+                model="openai/gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500,
+            )
+            text_response = completion.choices[0].message.content
+        except Exception as api_err:
+            print(f"OpenRouter API error: {api_err}")
+            # Return a fallback response if API fails
+            text_response = "I apologize, traveler. The connection to my wisdom source is temporarily unavailable. Please try again in a moment."
         
         audio_url = None
         if request.speak_mode:
@@ -241,20 +249,25 @@ async def chat(request: ChatRequest):
             except Exception as e:
                 print(f"ElevenLabs TTS error: {e}")
         
-        # Save chat to DB
-        db = app.state.db
-        await db.chat_history.insert_one({
-            "messages": [m.model_dump() for m in request.messages],
-            "response": text_response,
-            "speak_mode": request.speak_mode,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        # Save chat to DB (non-critical, don't fail if DB unavailable)
+        try:
+            db = app.state.db
+            await db.chat_history.insert_one({
+                "messages": [m.model_dump() for m in request.messages],
+                "response": text_response,
+                "speak_mode": request.speak_mode,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception as db_err:
+            print(f"Database error: {db_err}")
         
         return ChatResponse(text=text_response, audio_url=audio_url)
     
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An error occurred processing your request.")
 
 
 @app.post("/api/anam/session-token")
