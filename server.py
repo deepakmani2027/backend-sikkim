@@ -263,8 +263,8 @@ async def get_monastery(monastery_id: str):
 async def chat(request: ChatRequest):
     try:
         # Validate required API keys
-        if not OPENROUTER_API_KEY or not ELEVENLABS_API_KEY:
-            raise HTTPException(status_code=500, detail="API keys not configured. Please set OPENROUTER_API_KEY and ELEVENLABS_API_KEY.")
+        if not OPENROUTER_API_KEY:
+            raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY is not configured.")
         
         messages = [{"role": "system", "content": TENZIN_SYSTEM_PROMPT}]
         for msg in request.messages:
@@ -284,7 +284,7 @@ async def chat(request: ChatRequest):
             text_response = "I apologize, traveler. The connection to my wisdom source is temporarily unavailable. Please try again in a moment."
         
         audio_url = None
-        if request.speak_mode:
+        if request.speak_mode and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
             try:
                 audio_generator = eleven_client.text_to_speech.convert(
                     text=text_response,
