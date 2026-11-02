@@ -23,6 +23,7 @@ ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID")
 ANAM_API_KEY = os.environ.get("ANAM_API_KEY")
 ANAM_AVATAR_ID = os.environ.get("ANAM_AVATAR_ID")
+ANAM_PERSONA_ID = os.environ.get("ANAM_PERSONA_ID") or ANAM_AVATAR_ID
 ANAM_VOICE_ID = os.environ.get("ANAM_VOICE_ID")
 ANAM_LLM_ID = os.environ.get("ANAM_LLM_ID", "0934d97d-0c3a-4f33-91b0-5e136a0ef466")
 
@@ -326,26 +327,19 @@ async def create_anam_session():
         if not ANAM_API_KEY:
             print("ERROR: ANAM_API_KEY is not set")
             raise HTTPException(status_code=500, detail="Anam API key not configured")
-        if not ANAM_AVATAR_ID:
-            print("ERROR: ANAM_AVATAR_ID is not set")
-            raise HTTPException(status_code=500, detail="Anam Avatar ID not configured")
+        if not ANAM_PERSONA_ID:
+            print("ERROR: ANAM_PERSONA_ID or ANAM_AVATAR_ID is not set")
+            raise HTTPException(status_code=500, detail="Anam Persona ID not configured")
         
-        print(f"Creating Anam session with Avatar ID: {ANAM_AVATAR_ID}")
-        print(f"Using voice ID: {ANAM_VOICE_ID}")
-        print(f"Using LLM ID: {ANAM_LLM_ID}")
+        print(f"Creating Anam session with Persona ID: {ANAM_PERSONA_ID}")
         
-        # Prepare payload according to Anam documentation
         payload = {
             "personaConfig": {
-                "name": "Tenzin",
-                "avatarId": ANAM_AVATAR_ID,
-                "voiceId": ANAM_VOICE_ID,
-                "llmId": ANAM_LLM_ID,
-                "systemPrompt": TENZIN_SYSTEM_PROMPT,
+                "personaId": ANAM_PERSONA_ID,
             }
         }
         
-        print(f"[ANAM] Request payload personaConfig: avatarId={ANAM_AVATAR_ID[:15]}..., voiceId={ANAM_VOICE_ID[:15]}..., llmId={ANAM_LLM_ID[:15]}...")
+        print("[ANAM] Request payload uses personaId")
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -372,7 +366,7 @@ async def create_anam_session():
                 raise HTTPException(status_code=502, detail="No session token in Anam response")
             
             print(f"Successfully created Anam session")
-            return {"sessionToken": session_token}
+            return {"sessionToken": session_token, "personaConfig": payload["personaConfig"]}
     
     except httpx.RequestError as e:
         print(f"Anam request error: {str(e)}")
